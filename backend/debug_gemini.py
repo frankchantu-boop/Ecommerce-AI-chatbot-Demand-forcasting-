@@ -22,7 +22,7 @@ try:
             
     # Try gemini-1.5-flash-latest
     print("\nDEBUG: Trying specific model 'gemini-1.5-flash'...")
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     response = model.generate_content("Hello?")
     print("SUCCESS: " + response.text)
 

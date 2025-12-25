@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV, TimeSeriesSplit
 from sqlalchemy.orm import Session
 import models
 import forecast_models
@@ -65,22 +65,25 @@ class DemandForecaster:
         df = df.copy()
         
         # Time-based features
-        df['day_of_week'] = df['date'].dt.dayofweek  # 0=Monday, 6=Sunday
+        df['day_of_week'] = df['date'].dt.dayofweek
         df['month'] = df['date'].dt.month
         df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
         df['day_of_month'] = df['date'].dt.day
         
-        # Lag features (previous sales)
+        # Long-term Lag features (Stable Trends)
         df['sales_lag_7'] = df['sales'].shift(7).fillna(0)
         df['sales_lag_14'] = df['sales'].shift(14).fillna(0)
         df['sales_lag_30'] = df['sales'].shift(30).fillna(0)
-        
-        # Rolling statistics
+
+        # Rolling statistics (Previous Multiple Days)
+        df['rolling_mean_3'] = df['sales'].rolling(window=3, min_periods=1).mean()
+        df['rolling_mean_5'] = df['sales'].rolling(window=5, min_periods=1).mean()
         df['rolling_mean_7'] = df['sales'].rolling(window=7, min_periods=1).mean()
-        df['rolling_mean_14'] = df['sales'].rolling(window=14, min_periods=1).mean()
+        df['rolling_mean_30'] = df['sales'].rolling(window=30, min_periods=1).mean()
+        df['rolling_mean_60'] = df['sales'].rolling(window=60, min_periods=1).mean()
         df['rolling_std_7'] = df['sales'].rolling(window=7, min_periods=1).std().fillna(0)
         
-        # Trend (days since start)
+        # Trend
         df['trend'] = range(len(df))
         
         return df
@@ -89,16 +92,18 @@ class DemandForecaster:
         """
         Train both Linear Regression and Random Forest models
         """
-        # Drop rows with NaN (from lag features)
-        df = df.dropna()
+        # Fill NaNs with 0 instead of dropping to allow training on limited history
+        df = df.fillna(0)
         
-        if len(df) < 20:  # Need minimum data
-            raise ValueError("Insufficient data for training. Need at least 20 days of sales history.")
-        
+        if len(df) < 7:  # Lowered requirement from 20 to 7 days
+            print("⚠️ Warning: Very limited data history for training (< 7 days)")
+            # Try to proceed but results might be flat
+            
         # Features and target
         feature_cols = ['day_of_week', 'month', 'is_weekend', 'day_of_month',
                        'sales_lag_7', 'sales_lag_14', 'sales_lag_30',
-                       'rolling_mean_7', 'rolling_mean_14', 'rolling_std_7', 'trend']
+                       'rolling_mean_3', 'rolling_mean_5',
+                       'rolling_mean_7', 'rolling_mean_30', 'rolling_mean_60', 'rolling_std_7', 'trend']
         
         X = df[feature_cols]
         y = df['sales']
@@ -113,8 +118,22 @@ class DemandForecaster:
         lr_mae = mean_absolute_error(y_test, lr_pred)
         lr_r2 = r2_score(y_test, lr_pred)
         
-        # Train Random Forest
-        self.rf_model.fit(X_train, y_train)
+        # Optimize Random Forest with Grid Search
+        print(">> Tuning Random Forest Hyperparameters...")
+        param_grid = {
+            'n_estimators': [50, 100],
+            'max_depth': [10, None],
+            'min_samples_split': [5]
+        }
+        
+        tscv = TimeSeriesSplit(n_splits=3)
+        grid_search = GridSearchCV(estimator=self.rf_model, param_grid=param_grid, 
+                                   cv=tscv, scoring='neg_mean_squared_error', n_jobs=1) # n_jobs=1 to avoid concurrency issues
+        grid_search.fit(X_train, y_train)
+        
+        self.rf_model = grid_search.best_estimator_
+        print(f">> Best RF Params: {grid_search.best_params_}")
+        
         rf_pred = self.rf_model.predict(X_test)
         rf_rmse = np.sqrt(mean_squared_error(y_test, rf_pred))
         rf_mae = mean_absolute_error(y_test, rf_pred)
@@ -124,11 +143,11 @@ class DemandForecaster:
         if lr_rmse <= rf_rmse:
             self.best_model = self.lr_model
             self.best_model_name = "linear_regression"
-            print(f"✅ Linear Regression selected (RMSE: {lr_rmse:.2f}, MAE: {lr_mae:.2f}, R²: {lr_r2:.2f})")
+            print(f">> Linear Regression selected (RMSE: {lr_rmse:.2f}, MAE: {lr_mae:.2f}, R2: {lr_r2:.2f})")
         else:
             self.best_model = self.rf_model
             self.best_model_name = "random_forest"
-            print(f"✅ Random Forest selected (RMSE: {rf_rmse:.2f}, MAE: {rf_mae:.2f}, R²: {rf_r2:.2f})")
+            print(f">> Random Forest selected (RMSE: {rf_rmse:.2f}, MAE: {rf_mae:.2f}, R2: {rf_r2:.2f})")
         
         return {
             'lr_rmse': lr_rmse, 'lr_mae': lr_mae, 'lr_r2': lr_r2,
@@ -143,6 +162,11 @@ class DemandForecaster:
         predictions = []
         last_date = df['date'].max()
         
+        feature_cols = ['day_of_week', 'month', 'is_weekend', 'day_of_month',
+                       'sales_lag_7', 'sales_lag_14', 'sales_lag_30',
+                       'rolling_mean_3', 'rolling_mean_5',
+                       'rolling_mean_7', 'rolling_mean_30', 'rolling_mean_60', 'rolling_std_7', 'trend']
+
         # Use last row as base for predictions
         last_row = df.iloc[-1].copy()
         
@@ -150,6 +174,27 @@ class DemandForecaster:
             future_date = last_date + timedelta(days=i)
             
             # Create features for future date
+            # Logic to fetch lags from 'predictions' list if we are far enough in future, else from history
+            
+            def get_lag_val(lag_days):
+                if i <= lag_days:
+                    # Look back in history
+                    # We need the value from (last_date + i - lag_days)
+                    # We can pick from df if it's there, or it's last_row's lags?
+                    # Simplified: Use df tail logic or last_row shifting
+                    # Ideally we maintain a 'rolling history' list
+                    return last_row['sales'] if lag_days == 1 else last_row[f'sales_lag_{lag_days-1}'] # Approximation for simplicity
+                else:
+                    return predictions[i - lag_days - 1]['predicted_demand']
+
+            # More robust lag retrieval
+            # We construct a synthetic history array: [past_sales..., pred_1, pred_2, ...]
+            # For simplicity in this function, we stick to the basic shift logic but updated for new lags
+            
+            # Helper to get value from N days ago (0-indexed relative to future_time)
+            # future_date is index 'len(df) + i - 1'
+            # value at 'len(df)' is pred[0]
+            
             features = {
                 'day_of_week': future_date.dayofweek,
                 'month': future_date.month,
@@ -158,33 +203,42 @@ class DemandForecaster:
                 'sales_lag_7': last_row['sales'] if i <= 7 else predictions[-7]['predicted_demand'],
                 'sales_lag_14': last_row['sales_lag_7'] if i <= 14 else predictions[-14]['predicted_demand'],
                 'sales_lag_30': last_row['sales_lag_14'] if i <= 30 else predictions[-30]['predicted_demand'],
-                'rolling_mean_7': last_row['rolling_mean_7'],
-                'rolling_mean_14': last_row['rolling_mean_14'],
-                'rolling_std_7': last_row['rolling_std_7'],
+                'rolling_mean_3': last_row.get('rolling_mean_3', 0),
+                'rolling_mean_5': last_row.get('rolling_mean_5', 0),
+                'rolling_mean_7': last_row.get('rolling_mean_7', 0),
+                'rolling_mean_30': last_row.get('rolling_mean_30', 0),
+                'rolling_mean_60': last_row.get('rolling_mean_60', 0),
+                'rolling_std_7': last_row.get('rolling_std_7', 0),
                 'trend': last_row['trend'] + i
             }
             
             # Predict
             X_future = pd.DataFrame([features])
+            X_future = X_future[feature_cols]
             pred = self.best_model.predict(X_future)[0]
-            
-            # --- REALISM FILTER (Growth Damping) ---
-            # Agreed with user: 1.8x cap on historical peak sales
-            # to provide growth room without unrealistic spikes.
-            max_hist_daily = df['sales'].max() if not df.empty else 1
-            growth_cap = max(max_hist_daily * 1.8, 10) # 1.8x cap with floor of 10
-            
-            pred = min(max(0, pred), growth_cap) # No negative, no unrealistic spikes
+
+            # --- NAIVE FALLBACK (The Zero-Fixer) ---
+            # If the ML model is too conservative and predicts 0, 
+            # but the product has a 60-day history (rolling_mean_60 > 0),
+            # fall back to the 60-day average so we don't show 0.
+            history_signal = last_row.get('rolling_mean_60', 0)
+            if pred < 0.05 and history_signal > 0:
+                pred = history_signal * 0.95 # Use 95% of history as a safe floor
             # ---------------------------------------
             
-            # Confidence interval (±1 std deviation)
+            # --- REALISM FILTER (Growth Damping) ---
+            max_hist_daily = df['sales'].max() if not df.empty else 1
+            growth_cap = max(max_hist_daily * 1.8, 10) 
+            pred = min(max(0, pred), growth_cap) 
+            
+            # Confidence interval
             std = last_row['rolling_std_7']
             
             predictions.append({
                 'date': future_date,
-                'predicted_demand': round(pred, 2),
-                'confidence_lower': max(0, round(pred - std, 2)),
-                'confidence_upper': round(pred + std, 2)
+                'predicted_demand': float(pred),
+                'confidence_lower': float(max(0, pred - std)),
+                'confidence_upper': float(pred + std)
             })
         
         return pd.DataFrame(predictions)
@@ -198,7 +252,7 @@ class DemandForecaster:
             df = self.prepare_sales_history(product_id, days=60)
             
             if df['sales'].sum() == 0:
-                print(f"⚠️ No sales history for product {product_id}")
+                print(f"[WARN] No sales history for product {product_id}")
                 return None
             
             # Step 2: Engineer features
@@ -221,7 +275,7 @@ class DemandForecaster:
             }
             
         except Exception as e:
-            print(f"❌ Error forecasting for product {product_id}: {e}")
+            print(f"[ERROR] forecasting for product {product_id}: {e}")
             return None
     
     def save_forecasts(self, product_id: int, predictions_df: pd.DataFrame):
@@ -288,15 +342,15 @@ class DemandForecaster:
         if days_until_stockout < 7:
             alert_type = "critical"
             message = f"🚨 CRITICAL: {product.name} will run out in {int(days_until_stockout)} days!"
-            recommended_qty = int(total_demand_30)
+            recommended_qty = int(round(total_demand_30))
         elif days_until_stockout < 14:
             alert_type = "warning"
             message = f"⚠️ WARNING: {product.name} stock low. {int(days_until_stockout)} days remaining."
-            recommended_qty = int(total_demand_30)
+            recommended_qty = int(round(total_demand_30))
         elif days_until_stockout < 30:
             alert_type = "info"
             message = f"ℹ️ INFO: {product.name} - Consider reordering soon."
-            recommended_qty = int(total_demand_30)
+            recommended_qty = int(round(total_demand_30))
         
         if alert_type:
             alert = forecast_models.StockAlert(

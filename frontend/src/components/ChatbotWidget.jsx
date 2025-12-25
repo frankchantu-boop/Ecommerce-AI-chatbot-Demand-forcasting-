@@ -14,6 +14,7 @@ const ChatbotWidget = () => {
     const [inputValue, setInputValue] = useState("");
     const [loading, setLoading] = useState(false);
     const messagesEndRef = useRef(null);
+    const inputRef = useRef(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -25,6 +26,15 @@ const ChatbotWidget = () => {
         scrollToBottom();
     }, [messages, isOpen]);
 
+    // Auto-focus input when opened
+    useEffect(() => {
+        if (isOpen) {
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 100);
+        }
+    }, [isOpen]);
+
     const handleSendMessage = async (e) => {
         e.preventDefault();
         if (!inputValue.trim()) return;
@@ -34,6 +44,11 @@ const ChatbotWidget = () => {
         setMessages(prev => [...prev, userMsg]);
         setInputValue("");
         setLoading(true);
+
+        // Keep focus on input
+        setTimeout(() => {
+            inputRef.current?.focus();
+        }, 0);
 
         try {
             const response = await api.post('/chat/message', { message: userMsg.text });
@@ -236,6 +251,7 @@ const ChatbotWidget = () => {
                         }}
                     >
                         <input
+                            ref={inputRef}
                             type="text"
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}

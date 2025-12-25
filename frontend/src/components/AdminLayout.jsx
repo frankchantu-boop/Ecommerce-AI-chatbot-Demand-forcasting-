@@ -382,10 +382,12 @@ const AdminLayout = () => {
                     top: calc(100% + 15px);
                     right: -10px;
                     width: 320px;
+                    background: #0f172a;
+                    border: 1px solid rgba(255,255,255,0.1);
                     border-radius: 16px;
                     padding: 1.25rem;
                     z-index: 100;
-                    box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
                     animation: slideUp 0.3s ease;
                 }
 

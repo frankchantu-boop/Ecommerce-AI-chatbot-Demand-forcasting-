@@ -17,9 +17,8 @@ const Home = () => {
   useEffect(() => {
     const fetchFeatured = async () => {
       try {
-        const response = await api.get('/products');
-        // Taking top 4 for the featured section
-        setFeaturedProducts(response.data.slice(0, 4));
+        const response = await api.get('/products?limit=4');
+        setFeaturedProducts(response.data);
       } catch (error) {
         console.error("Error fetching featured products:", error);
       } finally {
@@ -58,7 +57,7 @@ const Home = () => {
       {/* Hero Section Pro */}
       <section className="hero-pro">
         <div className="hero-overlay"></div>
-        <img src={heroBg} alt="Tech Background" className="hero-bg-img" />
+        <img src={heroBg} alt="Tech Background" className="hero-bg-img" fetchpriority="high" />
 
         <div className="container-pro hero-content-pro">
           <div className="hero-tag">AI-CURATED EXCELLENCE</div>
@@ -132,6 +131,8 @@ const Home = () => {
                   <img
                     src={product.image_url || `https://picsum.photos/seed/${product.id + 100}/500/500`}
                     alt={product.name}
+                    loading="lazy"
+                    decoding="async"
                   />
                   <div className="p-overlay">
                     <button className="p-action-btn" onClick={(e) => handleAddToCart(product, e)} title="Add to Cart">

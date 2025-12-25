@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../lib/ToastContext';
 import axios from 'axios';
-import { Lock, Eye, EyeOff } from 'lucide-react';
+import { Lock, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 
 const AdminLogin = () => {
     const [email, setEmail] = useState('');
@@ -17,7 +17,6 @@ const AdminLogin = () => {
         setLoading(true);
 
         try {
-            // Using direct axios call or we could add to api.js
             const response = await axios.post('http://localhost:8000/admin/login', {
                 email,
                 password
@@ -26,9 +25,7 @@ const AdminLogin = () => {
             if (response.data.token) {
                 localStorage.setItem('admin_token', response.data.token);
                 localStorage.setItem('admin_email', response.data.user_email);
-                // User suggested fix:
                 localStorage.setItem('isAdminLoggedIn', 'true');
-                // Initialize session activity to prevent immediate timeout
                 localStorage.setItem('last_activity', Date.now().toString());
 
                 addToast("Welcome back, Admin!", "success");
@@ -46,101 +43,227 @@ const AdminLogin = () => {
     };
 
     return (
-        <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: '80vh'
-        }}>
-            <div className="card" style={{ width: '100%', maxWidth: '400px', padding: '2rem' }}>
-                <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                    <div style={{
-                        display: 'inline-flex',
-                        padding: '1rem',
-                        borderRadius: '50%',
-                        background: 'rgba(59, 130, 246, 0.1)',
-                        color: 'var(--color-primary)',
-                        marginBottom: '1rem'
-                    }}>
-                        <Lock size={32} />
-                    </div>
-                    <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Admin Portal</h2>
-                    <p style={{ color: 'var(--color-text-secondary)' }}>Please sign in to continue</p>
-                </div>
-
-                <form onSubmit={handleLogin}>
-                    <div className="form-group" style={{ marginBottom: '1rem' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>Email Address</label>
-                        <input
-                            type="email"
-                            required
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '0.75rem',
-                                background: 'rgba(255,255,255,0.05)',
-                                border: '1px solid var(--color-border)',
-                                borderRadius: 'var(--radius-sm)',
-                                color: 'white'
-                            }}
-                            placeholder="admin@example.com"
-                        />
-                    </div>
-
-                    <div className="form-group" style={{ marginBottom: '2rem' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>Password</label>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                type={showPassword ? "text" : "password"}
-                                required
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                style={{
-                                    width: '100%',
-                                    padding: '0.75rem',
-                                    paddingRight: '2.5rem',
-                                    background: 'rgba(255,255,255,0.05)',
-                                    border: '1px solid var(--color-border)',
-                                    borderRadius: 'var(--radius-sm)',
-                                    color: 'white'
-                                }}
-                                placeholder="••••••••"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                style={{
-                                    position: 'absolute',
-                                    right: '10px',
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    background: 'none',
-                                    border: 'none',
-                                    color: 'var(--color-text-secondary)',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                            </button>
+        <div className="login-page-pro">
+            <div className="login-container">
+                <div className="login-card glass-panel">
+                    <div className="icon-header">
+                        <div className="shield-icon-wrapper">
+                            <ShieldCheck size={40} className="text-primary" />
                         </div>
+                        <h2>Admin Portal</h2>
+                        <p className="text-dim">Secure Access Point</p>
                     </div>
 
-                    <button
-                        type="submit"
-                        className="btn btn-primary"
-                        style={{ width: '100%', justifyContent: 'center' }}
-                        disabled={loading}
-                    >
-                        {loading ? 'Authenticating...' : 'Sign In'}
-                    </button>
+                    <form onSubmit={handleLogin}>
+                        <div className="form-group-pro">
+                            <label>Email Identity</label>
+                            <input
+                                type="email"
+                                required
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="name@company.com"
+                                className="input-pro"
+                            />
+                        </div>
 
-                    <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
-                        <p>Demo Credentials: admin@example.com / admin123</p>
-                        <p style={{ marginTop: '0.5rem', opacity: 0.7 }}>Session expires after 10 minutes of inactivity.</p>
-                    </div>
-                </form>
+                        <div className="form-group-pro">
+                            <label>Passkey</label>
+                            <div className="password-wrapper">
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    required
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    placeholder="••••••••"
+                                    className="input-pro"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="eye-btn"
+                                >
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
+                            </div>
+                        </div>
+
+                        <button
+                            type="submit"
+                            className="btn-login-pro"
+                            disabled={loading}
+                        >
+                            {loading ? (
+                                <span className="flex items-center gap-2 justify-center">
+                                    <span className="spinner-sm"></span> Verifying...
+                                </span>
+                            ) : (
+                                <span className="flex items-center gap-2 justify-center">
+                                    <Lock size={16} /> Authenticate
+                                </span>
+                            )}
+                        </button>
+
+                        <div className="login-footer">
+                            <p className="text-xs text-dim">
+                                This system is monitored. Unauthorized access is prohibited.
+                            </p>
+                            <div className="demo-credentials mt-4 p-2 rounded bg-white/5 text-xs text-center border border-white/10">
+                                <span className="block text-primary font-mono mb-1">Demo Access</span>
+                                <span className="opacity-75">admin@example.com</span> • <span className="opacity-75">admin123</span>
+                            </div>
+                        </div>
+                    </form>
+                </div>
             </div>
+
+            <style>{`
+                .login-page-pro {
+                    min-height: 85vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: radial-gradient(circle at center, rgba(30, 41, 59, 0.3) 0%, transparent 70%);
+                }
+
+                .login-card {
+                    width: 100%;
+                    max-width: 420px;
+                    padding: 3rem 2.5rem;
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    position: relative;
+                    overflow: hidden;
+                }
+
+                .login-card::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 4px;
+                    background: linear-gradient(90deg, var(--color-primary), #8b5cf6);
+                }
+
+                .icon-header {
+                    text-align: center;
+                    margin-bottom: 2.5rem;
+                }
+
+                .shield-icon-wrapper {
+                    width: 80px;
+                    height: 80px;
+                    background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0 auto 1.5rem;
+                    border: 1px solid rgba(59, 130, 246, 0.1);
+                }
+
+                .icon-header h2 {
+                    font-size: 1.75rem;
+                    font-weight: 700;
+                    color: white;
+                    margin-bottom: 0.5rem;
+                    letter-spacing: -0.025em;
+                }
+
+                .form-group-pro {
+                    margin-bottom: 1.5rem;
+                }
+
+                .form-group-pro label {
+                    display: block;
+                    font-size: 0.85rem;
+                    font-weight: 500;
+                    color: var(--color-text-secondary);
+                    margin-bottom: 0.5rem;
+                    margin-left: 2px;
+                }
+
+                .input-pro {
+                    width: 100%;
+                    padding: 0.875rem 1rem;
+                    background: rgba(15, 23, 42, 0.6);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 0.75rem;
+                    color: white;
+                    font-size: 0.95rem;
+                    transition: all 0.2s ease;
+                }
+
+                .input-pro:focus {
+                    background: rgba(15, 23, 42, 0.8);
+                    border-color: var(--color-primary);
+                    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+                    outline: none;
+                }
+
+                .password-wrapper {
+                    position: relative;
+                }
+
+                .eye-btn {
+                    position: absolute;
+                    right: 12px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    background: none;
+                    border: none;
+                    color: var(--color-text-secondary);
+                    cursor: pointer;
+                    padding: 4px;
+                    border-radius: 4px;
+                    transition: color 0.2s;
+                }
+
+                .eye-btn:hover {
+                    color: white;
+                }
+
+                .btn-login-pro {
+                    width: 100%;
+                    padding: 1rem;
+                    background: linear-gradient(135deg, var(--color-primary) 0%, #2563eb 100%);
+                    color: white;
+                    border: none;
+                    border-radius: 0.75rem;
+                    font-weight: 600;
+                    font-size: 1rem;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    margin-top: 1rem;
+                    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+                }
+
+                .btn-login-pro:hover:not(:disabled) {
+                    transform: translateY(-1px);
+                    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
+                }
+
+                .btn-login-pro:disabled {
+                    opacity: 0.7;
+                    cursor: not-allowed;
+                }
+
+                .login-footer {
+                    margin-top: 2rem;
+                    text-align: center;
+                }
+
+                .spinner-sm {
+                    width: 16px;
+                    height: 16px;
+                    border: 2px solid rgba(255,255,255,0.3);
+                    border-radius: 50%;
+                    border-top-color: white;
+                    animation: spin 1s linear infinite;
+                    display: inline-block;
+                }
+            `}</style>
         </div>
     );
 };

@@ -11,9 +11,13 @@ from typing import List
 import crud, models, schemas
 from database import SessionLocal, engine
 from pydantic import BaseModel
+import forecasting
+import forecast_models
+import chatbot
 
 # Create the database tables
 models.Base.metadata.create_all(bind=engine)
+forecast_models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="E-commerce AI Backend")
 
@@ -176,7 +180,6 @@ def delete_product(product_id: int, db: Session = Depends(get_db)):
     return {"message": "Product deleted successfully"}
 
 # --- AI Chatbot Endpoint ---
-import chatbot
 
 class ChatRequest(BaseModel):
     message: str
@@ -189,15 +192,13 @@ def chat_message(chat: ChatRequest, db: Session = Depends(get_db)):
 
 
 # --- Demand Forecasting Endpoints ---
-import forecasting
-import forecast_models
 
 @app.post("/forecasting/train")
 def train_forecasting_models(db: Session = Depends(get_db)):
     """Train ML models for all products"""
     try:
         # Create tables if they don't exist
-        forecast_models.Base.metadata.create_all(bind=engine)
+        # forecast_models.Base.metadata.create_all(bind=engine) # Already done at startup
         
         results = forecasting.train_all_products(db)
         return {
@@ -211,21 +212,20 @@ def train_forecasting_models(db: Session = Depends(get_db)):
 
 @app.get("/forecasting/predictions")
 def get_all_predictions(db: Session = Depends(get_db)):
-    """Get predictions for all products"""
+    """Get predictions for all products, returning empty predictions for those without history"""
+    # 1. Get ALL products first
+    products = db.query(models.Product).all()
+    
+    # 2. Get ALL forecasts
     forecasts = db.query(forecast_models.DemandForecast).all()
     
-    # Group by product
-    products_forecasts = {}
+    # 3. Optimize lookup
+    forecast_map = {}
     for f in forecasts:
-        if f.product_id not in products_forecasts:
-            products_forecasts[f.product_id] = {
-                "product_id": f.product_id,
-                "product_name": f.product.name if f.product else "Unknown",
-                "current_stock": f.product.stock_quantity if f.product else 0,
-                "predictions": []
-            }
+        if f.product_id not in forecast_map:
+            forecast_map[f.product_id] = []
         
-        products_forecasts[f.product_id]["predictions"].append({
+        forecast_map[f.product_id].append({
             "date": f.forecast_date.isoformat(),
             "predicted_demand": f.predicted_demand,
             "confidence_lower": f.confidence_lower,
@@ -233,7 +233,17 @@ def get_all_predictions(db: Session = Depends(get_db)):
             "model_used": f.model_used
         })
     
-    return list(products_forecasts.values())
+    # 4. Construct response including ALL products
+    results = []
+    for product in products:
+        results.append({
+            "product_id": product.id,
+            "product_name": product.name,
+            "current_stock": product.stock_quantity,
+            "predictions": forecast_map.get(product.id, [])  # Empty list if no forecasts
+        })
+    
+    return results
 
 
 @app.get("/forecasting/predictions/{product_id}")
